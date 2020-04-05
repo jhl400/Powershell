@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param (
     [Parameter(Mandatory=$true)]
+    [validatescript({$_ -ne $null})]
     [string[]]
     $Words,
     [Parameter(Mandatory=$true)]
@@ -15,29 +16,42 @@ param (
 )
 
 # Start Main
-$results = @()
+$files = @()
+$folders = @()
 
-foreach($path in $Paths)
+foreach ($path in $paths)
 {
-    foreach($fileType in $FileTypes)
+    if(Test-Path -Path $path)
     {
-        Write-Verbose "Searching for $word in $path"
-        $result = Get-ChildItem -Path $path "*.$($fileType)" -Recurse | Select-String -Pattern $Words -SimpleMatch
+        $folders += $path
     }
-    $results += $result
+    else
+    {
+        Write-Host "$path doesn't exist"    
+    }
 }
 
-if($Save -eq $true)
+foreach ($type in $FileTypes)
 {
-    Write-Host "Output file will be save in C:\Temp"
-    if(!(Test-Path -Path "C:\temp"))
-    {
-        New-Item -Path "C:\Temp" -ItemType Directory
-    }
-    $results | Select-Object Pattern, Path, LineNumber | Sort-Object -Property Pattern | Export-Csv -Path "C:\Temp\Pattern.csv" -NoTypeInformation
+    $file = Get-ChildItem -Path $folders  "*.$($type)" -Recurse | ForEach-Object {$_.FullName}
+    $files += $file
 }
-else
-{
-    $results | Select-Object Pattern, Path, LineNumber | Sort-Object -Property Pattern
-}
+
+$result = Select-String -Path $files -Pattern $Words -SimpleMatch | Select-Object Pattern, Filename, LineNumber, Path #@{name = 'Path'; e=(Split-Path -path $_.Path)}
+$result
+
+#$results | Format-Table -AutoSize
+# if($Save -eq $true)
+# {
+#     Write-Host "Output file will be save in C:\Temp"
+#     if(!(Test-Path -Path "C:\temp"))
+#     {
+#         New-Item -Path "C:\Temp" -ItemType Directory
+#     }
+#     $results | Select-Object Pattern, Path, LineNumber | Sort-Object -Property Pattern | Export-Csv -Path "C:\Temp\Pattern.csv" -NoTypeInformation
+# }
+# else
+# {
+#     $results | Select-Object Pattern, Path, LineNumber | Sort-Object -Property Pattern
+# }
 # End Main
