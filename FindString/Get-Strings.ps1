@@ -12,12 +12,15 @@ param (
     $FileTypes,
     [Parameter(Mandatory=$false)]
     [Switch]
-    $Save = $false
+    $Save = $false,
+    [Parameter(Mandatory=$false)]
+    $NewWord
 )
 
 # Start Main
 $files = @()
 $folders = @()
+$NewWord = "Replaced"
 
 foreach ($path in $paths)
 {
@@ -37,21 +40,20 @@ foreach ($type in $FileTypes)
     $files += $file
 }
 
-$result = Select-String -Path $files -Pattern $Words -SimpleMatch | Select-Object Pattern, Filename, LineNumber, Path #@{name = 'Path'; e=(Split-Path -path $_.Path)}
-$result
+$results = Select-String -Path $files -Pattern $Words -SimpleMatch | Select-Object Pattern, Filename, LineNumber, Path #@{name = 'Path'; e=(Split-Path -path $_.Path)}
+$results
 
-#$results | Format-Table -AutoSize
-# if($Save -eq $true)
-# {
-#     Write-Host "Output file will be save in C:\Temp"
-#     if(!(Test-Path -Path "C:\temp"))
-#     {
-#         New-Item -Path "C:\Temp" -ItemType Directory
-#     }
-#     $results | Select-Object Pattern, Path, LineNumber | Sort-Object -Property Pattern | Export-Csv -Path "C:\Temp\Pattern.csv" -NoTypeInformation
-# }
-# else
-# {
-#     $results | Select-Object Pattern, Path, LineNumber | Sort-Object -Property Pattern
-# }
-# End Main
+if($NewWord -and ($results -ne $null))
+{
+    foreach($result in $results)
+    {
+        Copy-Item -Path $result.Path ($result.Path).Replace(".","_back.") -Force
+        foreach($word in $Words)
+        {
+            [regex]::Replace((Get-Content -Path $result.Path), [regex]::Escape($word), $NewWord, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase) | Set-Content -Path $result.Path
+        }
+        
+    }
+}
+
+
