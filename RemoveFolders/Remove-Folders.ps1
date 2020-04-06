@@ -1,61 +1,63 @@
 Param(
     
     [Parameter(Mandatory=$true)]
-    [string[]]$Path,
+    [string[]]$Paths,
     [Parameter(Mandatory=$true)]
     [int]$Days,
     [Parameter(Mandatory=$true)]
-    [int]$NumberofCopyProccess,
+    [int]$NumberofDeleteProccess,
     [Parameter(Mandatory=$false)]
     [string[]]$LogFile="D:\Temp\"
 )
 
-$LogFile = $LogFile + "DeleteError_" + (Get-Date -format yyyymmdd) + ".log"
-$exclusions = ("latest.tst","private")
+# Set parameters
+$errorLogFile = $LogFile + "DeleteError_" + (Get-Date -format yyyymmdd) + ".log"
+$deleteLogFile = $LogFile + "Delete_" + (Get-Date -format yyyymmdd) + ".log"
+$exclusions = @("latest.tst","private")
+$folders = @()
 
-if(Test-Path -Path $Path)
+New-Item -Path $errorLogFile, $deleteLogFile -ItemType File -Force
+
+# Get folder lists
+Write-Verbose "Testing folder path"
+foreach($path in $Paths)
 {
-    $folders = Get-ChildItem -Path $Path -Directory | Where-Object{($_.CreationTime -lt (Get-Date).AddDays($Days)) -and ($_.Name -notin $exclusions)}
-    $folders | Select-Object FullName, CreationTime
+    Write-Verbose "Getting folder list created longer than $Days ago"
+    if(Test-Path -Path $path)
+    {
+        $subfolders = Get-ChildItem -Path $path -Directory | Where-Object{($_.CreationTime -lt (Get-Date).AddDays(-($Days))) -and ($_.Name -notin $exclusions)} | Select-Object FullName
+        $folders += $subfolders
+    }
+    else
+    {
+        Write-Host "The $path doesn't exist" -ForegroundColor Red    
+    }
 }
-else
-{
-    Write-Host "The $path doesn't exist" -ForegroundColor Red    
-}
+
 
 $runningjobs = get-job | Where-Object{$_.State -eq "Running"}
 
-foreach($folder in $folders)
+# Deleting folders as background job
+
+do
 {
     
-    while($runningjobs.count -ge $NumberofCopyProccess)
+    while($runningjobs.count -lt $NumberofDeleteProccess)
     {
         Start-job {Remove-Item -Path $args[0] -Recurse -Force } -ArgumentList $folder.FullName
         #Remove-item -Path $folder.FullName -Recurse -Force
         $runningjobs = get-job | Where-Object{$_.State -eq "Running"}
         $failedjob = Get-Job | Where-Object{$_.state -eq "Completed" -and $_.HasMoreData -eq $True}
-        $failedjob.ChildJobs[0].Error.Exception | out-file -FilePath $LogFile
-        Get-Job | Where-Object {$_.State -eq "Completed"} | Remove-Job
+        $failedjob.ChildJobs[0].Error.Exception | out-file -FilePath $errorLogFile -Append
     }
     
     $erroredjobs = Get-Job | Where-Object{($_.state -eq "completed") -and ($_.HasMoreData -eq $true)}
 
     for($i = 0; $i -lt $erroredjobs.count; $i++)
     {
-        $erroredjobs.ChildJobs[$i].Error.Exception | Out-File -FilePath d:\temp\error.txt -Append
+        $erroredjobs.ChildJobs[$i].Error.Exception | Out-File -FilePath $errorLogFile  -Append
     }
-    # if($runningjobs.Count -lt $NumberofCopyProccess)
-    # {
-    #     Start-job {Remove-Item -Path $args[0] -Recurse -Force } -ArgumentList $folder.FullName
-    #     #Remove-item -Path $folder.FullName -Recurse -Force
-    #     $runningjobs = get-job | Where-Object{$_.State -eq "Running"}
-    # }
-    # else
-    # {
-    #     while($runningjobs.count -ge $NumberofCopyProccess)
-    #     {
-    #         $runningjobs = get-job | Where-Object{$_.State -eq "Running"}
-    #     }
-    # }
-}
 
+}while((Get-Job | Where-Object{$_.state -eq "Completed"}).Count -lt $folders.Count)
+
+Remove-Job -State Completed
